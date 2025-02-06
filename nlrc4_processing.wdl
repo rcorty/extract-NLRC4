@@ -2,14 +2,22 @@ version 1.0
 
 workflow NLRC4_processing {
     input {
-        File vcf_file_list
-        Array[String] vcf_files = read_lines(vcf_file_list)
-        Array[Int] batch_numbers
+        File? vcf_file_list
+        
+        # Optional parameters with defaults
+        Int files_per_batch = 1000
         String chr = "chr2"
         Int start_pos = 32224000
         Int end_pos = 32257000
-        Int files_per_batch = 1000
     }
+    
+    # Handle input flexibility
+    Array[String] vcf_files = read_lines(select_first([vcf_file_list]))
+    
+    # Calculate number of batches needed
+    Int num_files = length(vcf_files)
+    Int num_batches = ceil(num_files / files_per_batch)
+    Array[Int] batch_numbers = range(num_batches)
 
     scatter (batch_num in batch_numbers) {
         call process_batch {
@@ -22,10 +30,14 @@ workflow NLRC4_processing {
                 end = end_pos
         }
     }
-
+    
     call merge_outputs {
         input:
             input_files = process_batch.filtered_data
+    }
+
+    output {
+        File merged_output = merge_outputs.merged_data
     }
 }
 
@@ -38,52 +50,21 @@ task process_batch {
         Int start
         Int end
     }
-
-    command {
-        BATCH_START=$(( ${batch_number} * ${files_per_batch} ))
+    
+    Int batch_start = batch_number * files_per_batch
+    Int total_files = length(all_files)
+    Int actual_batch_size = if (batch_start + files_per_batch > total_files) then (total_files - batch_start) else files_per_batch
+    
+    command <
+        set -e  # Exit on error
+        set -o pipefail  # Exit if any command in a pipe fails
         
         # Create a file list for this batch
-        printf "%s\n" "${sep='\n' all_files}" > all_files.txt
-        sed -n "$((BATCH_START + 1)),$((BATCH_START + ${files_per_batch}))p" all_files.txt > batch_files.txt
+        printf "%s\n" "~{sep='\n' all_files}" > all_files.txt
+        sed -n "$((~{batch_start} + 1)),$((~{batch_start} + ~{actual_batch_size}))p" all_files.txt > batch_files.txt
         
-        # Process each file in the batch
-        while read vcf; do
-            bcftools view -r ${chromosome}:${start}-${end} $vcf | \
-            bcftools view -f PASS | \
-            bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%GT\t%AD\t%AF\t%DP\t%F1R2\t%F2R1\n' \
-            >> batch_output.csv
-        done < batch_files.txt
-    }
-
-    output {
-        File filtered_data = "batch_output.csv"
-    }
-
-    runtime {
-        docker: "biocontainers/bcftools:v1.9-1-deb_cv1"
-        memory: "8 GB"
-        cpu: "2"
-        disks: "local-disk 50 SSD"
-    }
-}
-
-task merge_outputs {
-    input {
-        Array[File] input_files
-    }
-
-    command {
-        cat ${sep=' ' input_files} > merged_output.csv
-    }
-
-    output {
-        File merged_data = "merged_output.csv"
-    }
-
-    runtime {
-        docker: "ubuntu:latest"
-        memory: "4 GB"
-        cpu: "1"
-        disks: "local-disk 50 SSD"
-    }
-}
+        # Add header to output file
+        echo -e "CHROM\tPOS\tREF\tALT\tGT\tAD\tAF\tDP\tF1R2\tF2R1" > batch_output.csv
+        
+        # Process files with error handling and logging
+        echo "Processing batch ~{batch_number} (files ~{
