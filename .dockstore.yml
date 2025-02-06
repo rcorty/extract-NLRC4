@@ -2,4 +2,4 @@ version: 1.2
 workflows:
   - name: NLRC4_processing
     subclass: WDL
-    primaryDescriptorPath: nlrc4_processing.wdl
+    primaryDescriptorPath: /nlrc4_processing.wdl
