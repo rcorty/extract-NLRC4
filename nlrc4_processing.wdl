@@ -3,18 +3,26 @@ version 1.0
 workflow NLRC4_processing {
     input {
         Array[File] vcf_files
-        Int files_per_batch = 1000
+        Int batch_size = 1000
         String chr = "chr2"
         Int start_pos = 32224000
         Int end_pos = 32257000
     }
 
-    Array[Array[File]] batched_files = collect_by_n(vcf_files, files_per_batch)
+    # Calculate number of batches needed
+    Int num_files = length(vcf_files)
+    Int num_batches = ceil(num_files / batch_size)
 
-    scatter (file_batch in batched_files) {
+    # Create array of batch indices
+    scatter (i in range(num_batches)) {
+        # Calculate start and end indices for this batch
+        Int start_idx = i * batch_size
+        Int end_idx = min(start_idx + batch_size, num_files)
+        Array[File] batch = slice(vcf_files, start_idx, end_idx)
+
         call process_vcf_batch {
             input:
-                vcf_files = file_batch,
+                vcf_files = batch,
                 chromosome = chr,
                 start = start_pos,
                 end = end_pos
