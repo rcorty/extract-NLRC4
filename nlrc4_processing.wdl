@@ -17,7 +17,7 @@ workflow NLRC4_processing {
     scatter (i in range(num_batches)) {
         # Calculate start and end indices for this batch
         Int start_idx = i * batch_size
-        Int end_idx = min(start_idx + batch_size, num_files)
+        Int end_idx = if (i + 1) * batch_size > num_files then num_files else (i + 1) * batch_size
         Array[File] batch = slice(vcf_files, start_idx, end_idx)
 
         call process_vcf_batch {
