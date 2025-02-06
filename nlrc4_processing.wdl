@@ -2,7 +2,8 @@ version 1.0
 
 workflow NLRC4_processing {
     input {
-        Array[String] vcf_files
+        File vcf_file_list
+        Array[String] vcf_files = read_lines(vcf_file_list)
         Array[Int] batch_numbers
         String chr = "chr2"
         Int start_pos = 32224000
